@@ -1,0 +1,11 @@
+<?php
+	if($_GET["log"] != null) {
+	echo "log ok";
+	file_put_contents('log.txt', $_GET["log"]."\n", FILE_APPEND);
+	} else if($_POST["url"] != null){
+	file_put_contents(urlencode($_POST["url"]), $_POST["source"]);
+	echo $_POST["url"];
+	} else {
+	echo "invalid";
+	}
+?>

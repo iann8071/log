@@ -1,0 +1,398 @@
+var mutate = function(category, type, targetAbstractHTML, attributeName, styleName) {
+    var i = 0;
+    var mutant = mutants[i];
+    var mutantNum = 10;
+    while(mutant != null && mutant != "") {
+	if (mutant.type == type && mutant.attributeName == attributeName && mutant.styleName == styleName && mutant.input == targetAbstractHTML) {
+		console.log("hit to mutant" + i);
+		if(mutantNum == i) {
+			console.log("type:" + type);
+			console.log("attributeName:" + attributeName);
+			console.log("styleName:" + styleName);
+			console.log(mutant.input);
+			console.log(mutant.mutant);
+			return mutant.mutant;
+		}
+	}
+	i++;
+	mutant = mutants[i];
+    }
+    return "";
+}
+
+var mutateTraversal = function(traversal, element){
+    traversal = traversal.toLowerCase();
+    var category = "relative";
+    var type = traversal.indexOf("parent") >= 0 ? "parent" : traversal.indexOf("child") ? "child" : "sibling";
+    var targetAbstractHTML = getAbstraceTargetHTML(element);
+    var mutant = mutate(category, type, targetAbstractHTML, "", "");
+    return mutant;
+}
+
+var mutateStyle = function (styleName, element) {
+    var category = "style";
+    var type = "style";
+    var targetAbstractHTML = getAbstraceTargetHTML(element);
+    var mutant = mutate(category, type, targetAbstractHTML, "", styleName.trim());
+    return mutant;
+}
+
+var mutateAttribute = function (attributeName, element) {
+    var category = "attribute";
+    var type = "attribute";
+    var targetAbstractHTML = getAbstraceTargetHTML(element);
+    var mutant = mutate(category, type, targetAbstractHTML, attributeName, "");
+    return mutant;
+}
+
+var mutateText = function (element) {
+    var category = "text";
+    var type = "text";
+    var targetAbstractHTML = getAbstraceTargetHTML(element);
+    var mutant = mutate(category, type, targetAbstractHTML, "", "");
+    return mutant;
+} 
+
+var mutateAbsolute = function(type, element) {
+    var category = "absolute";
+    var targetAbstractHTML = getAbstraceTargetHTML(element);
+    var mutant = mutate(category, type, targetAbstractHTML, "", "");
+    return mutant;
+}
+
+function getTargetHTML (element) {
+	var parent = document.createElement('div');
+	var clone = element.cloneNode(false);
+	parent.appendChild(clone);
+	return parent.innerHTML.replace(/\s+</g, "").replace(/>\s+/g, "").split('"').join("\\\"");
+}
+
+function getAbstraceTargetHTML (element) {
+	var parent = document.createElement('div');
+	var clone = element.cloneNode(false);
+	var attributes = {};
+	var attributeNames = new Array();
+	var _attributes = element.attributes;
+	for ( var j = 0; j < _attributes.length; j++) {
+		var attribute = _attributes[j];
+		if(attribute != undefined) {
+	 		clone.removeAttribute(attribute.name);
+		}
+		attributeNames.push(attribute.name);
+		attributes[attribute.name] = attribute.value;
+	}
+	attributeNames.sort(function(a1,a2) {
+		return a1 < a2 ? 1: -1;
+	});
+	for ( var j = 0; j < attributeNames.length; j++) {
+		var attributeName = attributeNames[j];
+		var attributeValue = attributes[attributeName];
+	 	clone.setAttribute(attributeName, attributeValue);
+	}
+	parent.appendChild(clone);
+	var html = parent.innerHTML;
+	html = html.replace(/\d+/g, "").replace(/\s+</g, "").replace(/>\s+/g, "").split('"').join("\\\"");
+	return html;
+}
+
+var replace = function(element, mutant) {
+    var mutantElement = new DOMParser().parseFromString(mutant, "text/html").firstChild;
+    var inner = element.innerHTML;
+    mutantElement.innerHTML = inner;
+    if(element.parentNode != null) {
+    element.parentNode.insertBefore(mutantElement, element.nextSibling);
+    element.parentNode.removeChild(element);
+    } else {
+    	element = mutantElement;
+    }
+}
+
+var _setAttribute = function(element, attribute) {
+	if(attribute.name.indexOf('on') < 0) {
+		Object.defineProperty(element, attribute.name, (function() {
+			var value = element[attribute.name];
+			var attributeName = attribute.name;
+			var _attribute = attribute;
+			return {
+				configurable : true,
+				set : function(newValue) {
+					var cleanElement = this.cloneNode(true);
+					if(element.parentNode != null) {
+						element.parentNode.insertBefore(cleanElement, element);
+						element.parentNode.removeChild(element);
+					}
+					traverseElement(cleanElement);
+					value = newValue;
+				},
+
+				get : function() {
+					if(attributeName === 'style') {
+						var mutant = mutateStyle("style", this);
+						if(mutant != "") {
+						    	replace(this, mutant);
+							return this.getAttribute("style");
+						}
+					} else {
+						var mutant = mutateAttribute(attributeName, this);
+						if(mutant != "") {
+						    	replace(this, mutant);
+							return this.getAttribute(attributeName);
+						}
+					}
+					return value;
+				}
+			}
+		})());
+	}
+}
+
+
+var setTraversalProperty = function(element) {
+	var traversals = [ 'parentNode', 'firstChild', 'lastChild', 'nextSibling', 'previousSibling'];
+	for ( var i = 0; i < traversals.length; i++) {
+		var traversal = traversals[i];
+		if (element[traversal] != null && element[traversal].nodeType === 1) {
+			Object.defineProperty(element, traversal, (function() {
+				var xpath = element.xpath;
+				var value = element[traversal];
+				var _traversal = traversal;
+				return {
+					configurable : true,
+					set : function(newValue) {
+						value = newValue;
+					},
+					get : function() {
+						var result;
+						if(_traversal == 'firstChild') {
+							result = element.firstElementChild;
+						} else if(_traversal == 'lastChild') {
+							result = element.lastElementChild;
+						} else if(_traversal == 'nextSibling') {
+							result = element.nextElementSibling;
+						} else if(_traversal == 'previousSibling') {
+							result = element.previousElementSibling;
+						} else if(_traversal == 'parentNode') {
+							result = element.parentElement;
+						} 
+ 
+						var mutant = mutateTraversal(_traversal, result);
+						if(mutant != "") {
+						    replace(result, mutant);
+						    console.log(result);
+					     	    return result;
+						} else {
+						    return result;
+						}
+					}
+				}
+			})());
+		}
+	}
+}
+
+var setText = function(element) {
+	var targets = [ 'textContent'];
+	for ( var i = 0; i < targets.length; i++) {
+		var target = targets[i];
+		Object.defineProperty(element, target, (function() {
+			var value = element[target];
+			return {
+				configurable : true,
+				set : function(newValue) {
+					value = newValue;
+				},
+				get : function() {
+					var log = '{"type":"text","targetElement":"' 
+							+ getAbstraceTargetHTML(this)
+								+ '","targetElementFullHTML":"' 
+								+ getTargetHTML(this)
+							+ '"}';
+					myLog(log);
+					return value;
+				}
+			}
+		})());
+	}
+}
+
+function traverseElement (element) {
+	if(!element.isDirty) {
+		element.isDirty = true; 
+		setTraversalProperty(element);
+		setText(element);
+		var attributes = element.attributes;
+		for ( var j = 0; j < attributes.length; j++) {
+			var attribute = attributes[j];
+			if(attribute != null) {
+		 		_setAttribute(element, attribute);
+			}
+		}
+
+		element._oldGetAttribute = element.getAttribute;
+		element.getAttribute = function(attributeName) {
+			var mutant = mutateAttribute(attributeName, this);
+			if(mutant != "") {
+			    	replace(this, mutant);
+				return this.getAttribute(attributeName);
+			} else {
+				var result = element._oldGetAttribute(attributeName);
+				return result;
+			}
+		};
+	}
+};
+
+document._oldGetElementById = document.getElementById;
+document.getElementById = function(parameter) {
+	var result = this._oldGetElementById(parameter);
+	if(result != null){
+	        var mutant = mutateAbsolute("id", result);
+	 	if(mutant != "") {
+		    replace(result, mutant);
+		} else {
+		    traverseElement(result);
+		}
+	}
+	return result;
+};
+
+// override getelementsbyclassname
+document._oldGetElementsByClassName = document.getElementsByClassName;
+document.getElementsByClassName = function(parameter) {
+	var results = document._oldGetElementsByClassName(parameter);
+	if(results != null && results[0] != undefined){
+	        var mutant = mutateAbsolute("class", results[0]);
+	 	if(mutant != "") {
+		    replace(results[0], mutant);
+		} else {
+		    traverseElement(results[0]);
+		}	
+	}
+	return results;
+};
+
+// override getElementsByTagName
+document._oldGetElementsByTagName = document.getElementsByTagName;
+document.getElementsByTagName = function(parameter) {
+	var results = this._oldGetElementsByTagName(parameter);
+	if(results != null && results[0] != undefined){
+	        var mutant = mutateAbsolute("tag", results[0]);
+	 	if(mutant != "") {
+		    replace(results[0], mutant);
+		} else {
+		    traverseElement(results[0]);
+		}
+	}
+	return results;
+};
+
+// override getElementsByName
+document._oldGetElementsByName = document.getElementsByName;
+document.getElementsByName = function(parameter) {
+	var results = this._oldGetElementsByName(parameter);
+	if(results != null && results[0] != undefined){
+	        var mutant = mutateAbsolute("name", results[0]);
+	 	if(mutant != "") {
+		    replace(results[0], mutant);
+		} else {
+		    traverseElement(results[0]);
+		}	
+	}
+	return results;
+};
+
+// override querySelector
+document._oldQuerySelector = document.querySelector;
+document.querySelector = function(parameter) {
+	var result = this._oldQuerySelector(parameter);
+	if(result != null){
+		var log = '{"type":"querySelector","methodParameter":"'
+				+ parameter.split('"').join('\\\"').replace(/\d+/g, "")
+				+ '","targetElement":"'
+				+ getAbstraceTargetHTML(result)
+								+ '","targetElementFullHTML":"' 
+								+ getTargetHTML(result)
+				+ '"}';
+		myLog(log);
+	}
+	return result;
+};
+
+// override querySelectorAll
+document._oldQuerySelectorAll = document.querySelectorAll;
+document.querySelectorAll = function(parameter) {
+	var results = this._oldQuerySelectorAll(parameter);
+	if(results != null && results[0] != undefined){
+	        var mutant = mutateAbsolute("selector", results[0]);
+	 	if(mutant != "") {
+		    replace(results[0], mutant);
+		} else {
+		    traverseElement(results[0]);
+		}
+	}
+	return results;
+};
+
+for ( var i = 0; i < document.styleSheets.length; i++) {
+	var styleSheet = document.styleSheets[i];
+	var ownerNode = styleSheet.ownerNode;
+	styleSheet.xpath = document.getElementXPath(ownerNode);
+}
+for ( var i = 0; i < document.styleSheets.length; i++) {
+	var styleSheet = document.styleSheets[i];
+	var targets = [ 'cssRules', 'disabled', 'href', 'media', 'ownerNode',
+			'ownerRule', 'parentStyleSheet', 'rules', 'title', 'type' ];
+
+	for ( var j = 0; j < targets.length; j++) {
+		var target = targets[j];
+		if (target == 'cssRules') {
+			for ( var k = 0; styleSheet.cssRules != null
+					&& k < styleSheet.cssRules.length; k++) {
+				var cssRule = styleSheet.cssRules[k];
+				var ruleTargets = [ 'cssText', 'parentRule',
+						'parentStyleSheet', 'selectorText', 'style', 'type' ];
+				for ( var l = 0; l < ruleTargets.length; l++) {
+					Object.defineProperty(cssRule, ruleTargets[l], (function() {
+						var value = styleSheet.cssRules[k];
+						var ownerNodeXPath = styleSheet.xpath;
+						var index = k;
+						return {
+							configurable : true,
+							set : function(newValue) {
+								value = newValue;
+							},
+							get : function() {
+								var log = '{"type":"cssRules"'
+										+ '","ownerElement":"' + ownerNodeXPath
+										+ '","index":"' + index + '"}';
+								myLog(log);
+								return value;
+							}
+						}
+					})());
+				}
+			}
+		} else {
+			Object.defineProperty(styleSheet, target,
+					(function() {
+						var value = styleSheet[target];
+						var _ownerNodeXPath = styleSheet.xpath;
+						var index = i;
+						return {
+							configurable : true,
+							set : function(newValue) {
+								value = newValue;
+							},
+							get : function() {
+								var log = '{"type":"styleSheets"'
+										+ '","ownerElement":"'
+										+ _ownerNodeXPath + '"}';
+								myLog(log);
+								return value;
+							}
+						}
+					})());
+		}
+	}
+}
+
